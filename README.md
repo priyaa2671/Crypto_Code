@@ -7,7 +7,7 @@ def load_dictionary():
             return set(word.strip().upper() for word in f)
     except FileNotFoundError:
         print("Dictionary file not found! Using a basic hardcoded dictionary.")
-        return {"THIS", "IS", "A", "TEST", "EXAMPLE", "CRYPTOGRAM", "HAS", "NO", "SOLUTION", "AREN'T", "ISN'T"}
+        return {"THIS", "IS", "A", "TEST", "EXAMPLE", "CRYPTOGRAM", "HAS", "NO", "SOLUTION"}
 
 ENGLISH_WORDS = load_dictionary()
 
@@ -16,9 +16,20 @@ def is_english_word(word):
     clean_word = re.sub(r"[^A-Z]", "", word)  # Remove punctuation for validation
     return clean_word in ENGLISH_WORDS
 
+def generate_best_guess(word):
+    """
+    Generate a "best guess" for a non-English word by:
+    - Suggesting dictionary words with similar lengths or letter overlaps.
+    """
+    word_length = len(word)
+    guesses = [w for w in ENGLISH_WORDS if len(w) == word_length]
+    if not guesses:
+        return ["No suggestion"]
+    return guesses[:3]  # Return up to three best guesses
+
 def decrypt_cryptogram(cryptogram):
     """Attempt to solve the cryptogram."""
-    words = re.findall(r"[A-Z']+", cryptogram)  # Extract words, keeping contractions
+    words = cryptogram.split()
     solutions = []
     MAX_RECURSION_DEPTH = 1000
     recursion_depth = 0
@@ -35,10 +46,7 @@ def decrypt_cryptogram(cryptogram):
             return
 
         current_word = words[index]
-        possible_words = sorted(
-            [word for word in ENGLISH_WORDS
-             if len(re.sub(r"[^A-Z]", "", word)) == len(re.sub(r"[^A-Z]", "", current_word))]
-        )
+        possible_words = [word for word in ENGLISH_WORDS if len(word) == len(current_word)]
 
         # If no possible words remain, backtrack
         if not possible_words:
@@ -49,16 +57,15 @@ def decrypt_cryptogram(cryptogram):
             valid = True
 
             for c, p in zip(current_word, pw):
-                if c.isalpha():
-                    if c in temp_mapping:
-                        if temp_mapping[c] != p:
-                            valid = False
-                            break
-                    elif p in temp_mapping.values():
+                if c in temp_mapping:
+                    if temp_mapping[c] != p:
                         valid = False
                         break
-                    else:
-                        temp_mapping[c] = p
+                elif p in temp_mapping.values():
+                    valid = False
+                    break
+                else:
+                    temp_mapping[c] = p
 
             if valid:
                 solve(temp_mapping, index + 1)
@@ -67,44 +74,43 @@ def decrypt_cryptogram(cryptogram):
 
     # If no solutions were found, return no solution
     if not solutions:
-        return "NO SOLUTION FOUND", words
+        non_english_words = [word for word in words if not is_english_word(word)]
+        best_guesses = {word: generate_best_guess(word) for word in non_english_words[:3]}
+        return "NO SOLUTION FOUND", best_guesses
 
-    # Generate decrypted text from the best solution
+    # Generate decrypted text
     best_solution = solutions[0]
-    decrypted_words = []
-    for word in words:
-        decrypted_word = "".join(best_solution.get(c, c) if c.isalpha() else c for c in word)
-        decrypted_words.append(decrypted_word)
+    decrypted_words = ["".join(best_solution.get(c, c) for c in word) for word in words]
 
-    # Identify original cryptogram words that are non-English
-    non_english_words = []
-    for original_word, decrypted_word in zip(words, decrypted_words):
-        if not is_english_word(decrypted_word):  # Check if the decrypted word is valid English
-            non_english_words.append(original_word)  # Flag the original cryptogram word
-
-    # If all words are flagged as non-English, return failure
-    if len(non_english_words) == len(words):
-        return "NO SOLUTION FOUND", words
-
-    return " ".join(decrypted_words), non_english_words
-
+    # Identify non-English words
+    non_english_words = [word for word, decrypted_word in zip(words, decrypted_words) if not is_english_word(decrypted_word)]
+    best_guesses = {word: generate_best_guess(word) for word in non_english_words[:3]}
+    return " ".join(decrypted_words), best_guesses
 
 # Main Program
 def main():
     print("Enter your cryptogram (uppercase, punctuation preserved):")
     cryptogram = input().strip().upper()
 
-    # Retain punctuation for better usability
+    # Extract only letters and preserve punctuation
+    pattern = r"[A-Z]+|[^A-Z\s]"
+    matches = re.findall(pattern, cryptogram)
+    clean_cryptogram = " ".join([m if m.isalpha() else "" for m in matches])
+
     try:
-        solution, non_english = decrypt_cryptogram(cryptogram)
+        solution, non_english = decrypt_cryptogram(clean_cryptogram)
 
         if solution == "NO SOLUTION FOUND":
             print("Answer:\nTHIS CRYPTOGRAM HAS NO SOLUTION.")
+            if non_english:
+                for word, guesses in non_english.items():
+                    print(f"Non-English word: '{word}', Best guesses: {', '.join(guesses)}")
         else:
             print(f"Decrypted Text: {solution}")
-
-        if non_english:
-            print(f"Non-English words: {', '.join(non_english)}")
+            if non_english:
+                print("Non-English words detected:")
+                for word, guesses in non_english.items():
+                    print(f"'{word}': Best guesses: {', '.join(guesses)}")
     except KeyboardInterrupt:
         print("\nProcess interrupted by the user. Exiting.")
     except Exception as e:
